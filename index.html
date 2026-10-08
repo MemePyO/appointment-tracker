@@ -1,0 +1,115 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#2e7d32">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="default">
+  <meta name="apple-mobile-web-app-title" content="Appointments">
+  <title>Appointment Tracker</title>
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icons/icon-192.png" type="image/png">
+  <link rel="apple-touch-icon" href="icons/icon-192.png">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="topbar-row">
+      <h1>Appointment Tracker</h1>
+      <span id="pill" class="pill loading">loading</span>
+    </div>
+    <div id="status" class="status">Loading Python…</div>
+  </header>
+
+  <main>
+    <section class="card">
+      <h2>Header</h2>
+      <label>Title (name)
+        <input id="f-title" type="text" placeholder="POPOVICI EMANUEL" disabled>
+      </label>
+      <div class="row">
+        <label>Month
+          <input id="f-month" type="text" placeholder="APRILIE" disabled>
+        </label>
+        <label class="narrow">Days
+          <input id="f-days" type="text" inputmode="numeric" value="30" disabled>
+        </label>
+      </div>
+      <p class="hint">X = appointment &nbsp;·&nbsp; L = legal free day &nbsp;·&nbsp; C = free day &nbsp;·&nbsp; empty = not there</p>
+    </section>
+
+    <section class="card">
+      <h2>Pattern <small>same for all patients</small></h2>
+      <label>C days (free)
+        <input id="f-c" type="text" placeholder="e.g. 2, 5, 10, 13" disabled>
+      </label>
+      <label>L days (legal)
+        <input id="f-l" type="text" placeholder="e.g. 3, 4, 11, 12" disabled>
+      </label>
+    </section>
+
+    <section class="card">
+      <h2 id="form-title">Add patient</h2>
+      <div class="ac-wrap">
+        <label>Patient name
+          <input id="f-name" type="text" placeholder="MOLAN MARIA" autocomplete="off" disabled>
+        </label>
+        <div id="ac-list" class="ac-list" hidden></div>
+      </div>
+      <label>X days
+        <input id="f-x" type="text" placeholder="e.g. 1, 3, 5-7" disabled>
+      </label>
+      <div class="row row3">
+        <label>Data decizie
+          <input id="f-dec" type="text" placeholder="22.01" disabled>
+        </label>
+        <label class="narrow">Nr zile
+          <input id="f-zile" type="text" inputmode="numeric" placeholder="30" disabled>
+        </label>
+        <label>Localitate
+          <input id="f-loc" type="text" placeholder="VOINESTI" disabled>
+        </label>
+      </div>
+      <div class="btn-row">
+        <button id="btn-add" class="btn primary" disabled>Add patient</button>
+        <button id="btn-update" class="btn primary" hidden>Update</button>
+        <button id="btn-cancel" class="btn ghost" hidden>Cancel</button>
+        <button id="btn-remove" class="btn danger" hidden>Remove</button>
+      </div>
+    </section>
+
+    <section class="card">
+      <h2>Patients <span id="badge" class="badge">0</span></h2>
+      <div class="table-wrap">
+        <table id="table">
+          <thead>
+            <tr>
+              <th>NR.</th><th>PACIENT</th><th>X DAYS</th><th>COUNT</th>
+              <th>DATA DECIZIE</th><th>NR ZILE</th><th>LOCALITATE</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+      </div>
+      <p id="empty" class="empty">No patients yet. Add one above.</p>
+    </section>
+
+    <section class="card actions">
+      <button id="btn-xlsx" class="btn success big" disabled>⬇ Export Excel (.xlsx)</button>
+      <button id="btn-json-out" class="btn" disabled>Export project (.json)</button>
+      <label class="btn file" for="f-json-in">Import project (.json)</label>
+      <input id="f-json-in" type="file" accept=".json,application/json" hidden>
+      <button id="btn-clear" class="btn danger ghost" disabled>Clear all</button>
+    </section>
+  </main>
+
+  <footer>
+    Python runs locally in your browser — your data never leaves this device.
+    Works offline after the first load.
+  </footer>
+
+  <div id="toast" class="toast" hidden></div>
+  <script src="app.js"></script>
+</body>
+</html>
