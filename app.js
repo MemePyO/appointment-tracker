@@ -4,6 +4,7 @@ const PYODIDE_BASE = "https://cdn.jsdelivr.net/pyodide/v314.0.7/full/";
 const KEY_PROJECT = "appointment_project";
 const KEY_NAMES = "appointment_names";
 const KEY_WORKBOOK = "appointment_workbook";
+const KEY_LANG = "appointment_lang";
 
 const $ = (id) => document.getElementById(id);
 
@@ -26,6 +27,7 @@ const ui = {
   btnExUpdate: $("btn-ex-update"), btnExNew: $("btn-ex-new"),
   btnExCancel: $("btn-ex-cancel"),
   status: $("status"), pill: $("pill"), toast: $("toast"),
+  langSelect: $("lang-select"), btnLAuto: $("btn-l-auto"),
 };
 
 const state = {
@@ -34,6 +36,8 @@ const state = {
   knownNames: [],
   bridge: null,
   workbookB64: "",
+  lang: "en",
+  strings: {},
   project: {
     title: "", month: "", year: String(new Date().getFullYear()),
     days_in_month: 30,
@@ -45,6 +49,77 @@ let toastTimer = null;
 let saveTimer = null;
 let acItems = [];
 let acIndex = -1;
+
+const FALLBACK = {
+  web_pill_loading: "loading",
+  web_status_boot1: "Loading Python runtime…",
+  web_status_boot2: "Starting Python…",
+  web_status_boot3: "Loading Excel engine (openpyxl)…",
+  web_status_boot4: "Loading app logic…",
+  web_status_ready: "Ready",
+  web_status_ready_offline: "Ready — offline",
+  web_status_load_failed: "Load failed: {err} — tap to retry",
+  btn_add: "Add patient",
+  web_form_edit: "Edit patient",
+  err_patient_name_required: "Patient name is required.",
+  err_days_whole: "Days must be a whole number between 1 and 31.",
+  err_date_format: "Date must look like 30.04.2026",
+  info_select_patient: "Select a patient in the table first.",
+  web_toast_x_days: "X days: {err}",
+  web_toast_patient_added: "Patient added.",
+  web_toast_patient_updated: "Patient updated.",
+  web_toast_patient_removed: "Patient removed.",
+  web_confirm_remove: "Remove {name}?",
+  web_toast_project_exported: "Project file exported.",
+  web_toast_import_failed: "Import failed: {err}",
+  web_toast_still_loading: "Still loading — try again in a moment.",
+  web_toast_load_failed: "Load failed: {err}",
+  web_toast_cannot_read: "Cannot read workbook: {err}",
+  web_toast_loaded_sheets: "Workbook loaded ({n} sheets).",
+  web_toast_date_required: "Date is required, e.g. 30.04.2026.",
+  web_toast_exported: "Exported sheet {sheet} — file downloaded.",
+  web_toast_no_workbook_update: "No workbook saved in this browser yet — use “Create new workbook” or “Load workbook (.xlsx)” first.",
+  web_toast_no_workbook_mark: "No workbook in this browser yet — export a new one first (or use “Load workbook (.xlsx)”).",
+  web_confirm_sheet: "Sheet {sheet} already exists in the stored workbook.\n\nReplace it with the new data?",
+  web_confirm_clear: "Clear header, pattern and all patients?",
+  web_label_c_field: "C days",
+  web_label_l_field: "L days",
+  web_suffix_downloaded: " — file downloaded.",
+  mark_already: "Already marked: {who} on {sheet}",
+  mark_added: "Added {who} + X on {sheet}",
+  mark_marked: "Marked X for {who} on {sheet}",
+};
+
+function t(key, fmt) {
+  let s = (state.strings && state.strings[key]) || FALLBACK[key] || key;
+  if (fmt) {
+    for (const k of Object.keys(fmt)) {
+      s = s.split("{" + k + "}").join(String(fmt[k]));
+    }
+  }
+  return s;
+}
+
+function applyLang() {
+  document.querySelectorAll("[data-i18n]").forEach((el) => {
+    el.textContent = t(el.getAttribute("data-i18n"));
+  });
+  document.querySelectorAll("[data-i18n-ph]").forEach((el) => {
+    el.placeholder = t(el.getAttribute("data-i18n-ph"));
+  });
+  ui.langSelect.value = state.lang;
+  document.documentElement.lang = state.lang;
+}
+
+function setLang(code) {
+  state.lang = code === "ro" ? "ro" : "en";
+  try { localStorage.setItem(KEY_LANG, state.lang); } catch (e) { /* ignore */ }
+  if (state.bridge) {
+    try { JSON.parse(state.bridge.setLang(state.lang)); } catch (e) { /* ignore */ }
+    try { state.strings = JSON.parse(state.bridge.strings(state.lang)); } catch (e) { /* ignore */ }
+  }
+  applyLang();
+}
 
 function toast(message, kind) {
   kind = kind || "error";
@@ -67,6 +142,9 @@ function daysValue() {
 }
 
 function loadStorage() {
+  try {
+    state.lang = localStorage.getItem(KEY_LANG) === "ro" ? "ro" : "en";
+  } catch (e) { state.lang = "en"; }
   try {
     const names = JSON.parse(localStorage.getItem(KEY_NAMES) || "[]");
     if (Array.isArray(names)) {
@@ -216,7 +294,7 @@ function moveAc(step) {
 function clearForm() {
   state.editIndex = null;
   [ui.name, ui.x, ui.dec, ui.zile, ui.loc].forEach((el) => { el.value = ""; });
-  ui.formTitle.textContent = "Add patient";
+  ui.formTitle.textContent = t("btn_add");
   ui.btnAdd.hidden = false;
   ui.btnUpdate.hidden = true;
   ui.btnCancel.hidden = true;
@@ -233,7 +311,7 @@ function startEdit(i) {
   ui.dec.value = p.decision_date || "";
   ui.zile.value = p.nr_zile || "";
   ui.loc.value = p.localitate || "";
-  ui.formTitle.textContent = "Edit patient";
+  ui.formTitle.textContent = t("web_form_edit");
   ui.btnAdd.hidden = true;
   ui.btnUpdate.hidden = false;
   ui.btnCancel.hidden = false;
@@ -245,9 +323,9 @@ function startEdit(i) {
 
 function readForm() {
   const name = ui.name.value.trim();
-  if (!name) { toast("Patient name is required."); ui.name.focus(); return null; }
+  if (!name) { toast(t("err_patient_name_required")); ui.name.focus(); return null; }
   const r = JSON.parse(state.bridge.parse(ui.x.value, daysValue()));
-  if (!r.ok) { toast("X days: " + r.error); ui.x.focus(); return null; }
+  if (!r.ok) { toast(t("web_toast_x_days", { err: r.error })); ui.x.focus(); return null; }
   return {
     name: name,
     x_days: r.days,
@@ -272,12 +350,12 @@ function addPatient() {
   registerName(p.name);
   persist();
   clearForm();
-  toast("Patient added.", "success", 1500);
+  toast(t("web_toast_patient_added"), "success", 1500);
 }
 
 function updatePatient() {
   if (state.editIndex === null) {
-    toast("Select a patient in the table first.");
+    toast(t("info_select_patient"));
     return;
   }
   const p = readForm();
@@ -286,20 +364,20 @@ function updatePatient() {
   registerName(p.name);
   persist();
   clearForm();
-  toast("Patient updated.", "success", 1500);
+  toast(t("web_toast_patient_updated"), "success", 1500);
 }
 
 function removePatient() {
   if (state.editIndex === null) {
-    toast("Select a patient in the table first.");
+    toast(t("info_select_patient"));
     return;
   }
   const p = state.project.patients[state.editIndex];
-  if (!window.confirm("Remove " + (p.name || "this patient") + "?")) return;
+  if (!window.confirm(t("web_confirm_remove", { name: p.name || "?" }))) return;
   state.project.patients.splice(state.editIndex, 1);
   persist();
   clearForm();
-  toast("Patient removed.", "success", 1500);
+  toast(t("web_toast_patient_removed"), "success", 1500);
 }
 
 function download(bytes, filename, mime) {
@@ -340,7 +418,7 @@ function closeExportModal() {
 
 function doExportWorkbook(workbookB64) {
   const raw = collectRaw();
-  if (!raw) { toast("Days must be a whole number between 1 and 31."); return; }
+  if (!raw) { toast(t("err_days_whole")); return; }
   const v = JSON.parse(state.bridge.validate(JSON.stringify(raw)));
   if (!v.ok) { toast(v.error); return; }
   let b64 = workbookB64 || "";
@@ -350,8 +428,7 @@ function doExportWorkbook(workbookB64) {
     if (!sh.ok) { toast(sh.error); return; }
     const sheets = JSON.parse(state.bridge.sheets(b64));
     if (sheets.ok && sheets.sheets.indexOf(sh.sheet) !== -1 &&
-        !window.confirm("Sheet " + sh.sheet + " already exists in the " +
-                        "stored workbook.\n\nReplace it with the new data?")) {
+        !window.confirm(t("web_confirm_sheet", { sheet: sh.sheet }))) {
       closeExportModal();
       return;
     }
@@ -361,7 +438,7 @@ function doExportWorkbook(workbookB64) {
   saveWorkbook(r.b64);
   download(b64ToBytes(r.b64), r.filename, r.mime);
   closeExportModal();
-  toast("Exported sheet " + r.sheet + " — file downloaded.", "success", 2600);
+  toast(t("web_toast_exported", { sheet: r.sheet }), "success", 2600);
 }
 
 function exportXlsx() {
@@ -371,8 +448,7 @@ function exportXlsx() {
 function exportUpdate() {
   if (!state.workbookB64) {
     closeExportModal();
-    toast("No workbook saved in this browser yet — use " +
-          "“Create new workbook” or “Load workbook (.xlsx)” first.");
+    toast(t("web_toast_no_workbook_update"));
     return;
   }
   doExportWorkbook(state.workbookB64);
@@ -384,34 +460,32 @@ function exportNew() {
 
 async function loadWorkbookFile(file) {
   if (!file) return;
-  if (!state.ready) { toast("Still loading — try again in a moment."); return; }
+  if (!state.ready) { toast(t("web_toast_still_loading")); return; }
   try {
     const buf = new Uint8Array(await file.arrayBuffer());
     let bin = "";
     for (let i = 0; i < buf.length; i++) bin += String.fromCharCode(buf[i]);
     const b64 = btoa(bin);
     const sheets = JSON.parse(state.bridge.sheets(b64));
-    if (!sheets.ok) { toast("Cannot read workbook: " + sheets.error); return; }
+    if (!sheets.ok) { toast(t("web_toast_cannot_read", { err: sheets.error })); return; }
     saveWorkbook(b64);
-    toast("Workbook loaded (" + sheets.sheets.length + " sheet" +
-          (sheets.sheets.length === 1 ? "" : "s") + ").", "success", 2400);
+    toast(t("web_toast_loaded_sheets", { n: sheets.sheets.length }), "success", 2400);
   } catch (e) {
-    toast("Load failed: " + e.message);
+    toast(t("web_toast_load_failed", { err: e.message }));
   }
 }
 
 function markAppointment() {
   if (!state.ready) return;
   const name = ui.markName.value.trim();
-  if (!name) { toast("Patient name is required."); ui.markName.focus(); return; }
+  if (!name) { toast(t("err_patient_name_required")); ui.markName.focus(); return; }
   const dateText = ui.markDate.value.trim();
-  if (!dateText) { toast("Date is required, e.g. 30.04.2026."); ui.markDate.focus(); return; }
+  if (!dateText) { toast(t("web_toast_date_required")); ui.markDate.focus(); return; }
   const parts = dateText.split(/[./\-\s]+/).filter(Boolean);
-  if (parts.length !== 3) { toast("Date must look like 30.04.2026"); ui.markDate.focus(); return; }
+  if (parts.length !== 3) { toast(t("err_date_format")); ui.markDate.focus(); return; }
   const [day, month, year] = parts;
   if (!state.workbookB64) {
-    toast("No workbook in this browser yet — export a new one first " +
-          "(or use “Load workbook (.xlsx)”).");
+    toast(t("web_toast_no_workbook_mark"));
     return;
   }
   const r = JSON.parse(state.bridge.addAppt(state.workbookB64, name, day, month, year));
@@ -421,21 +495,21 @@ function markAppointment() {
     "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
   registerName(name);
   let msg;
-  if (r.result === "already_marked") msg = "Already marked: " + name + " on " + r.sheet;
-  else if (r.result === "added") msg = "Added " + name + " + X on " + r.sheet;
-  else msg = "Marked X for " + name + " on " + r.sheet;
-  ui.markStatus.textContent = msg + " — file downloaded.";
+  if (r.result === "already_marked") msg = t("mark_already", { who: name, sheet: r.sheet });
+  else if (r.result === "added") msg = t("mark_added", { who: name, sheet: r.sheet });
+  else msg = t("mark_marked", { who: name, sheet: r.sheet });
+  ui.markStatus.textContent = msg + t("web_suffix_downloaded");
   toast(msg, "success", 2400);
 }
 
 function exportJson() {
   const p = collectRaw();
-  if (!p) { toast("Days must be a whole number between 1 and 31."); return; }
+  if (!p) { toast(t("err_days_whole")); return; }
   const base = (p.title || "appointments").replace(/[^\w\- ]+/g, "").trim()
     .replace(/\s+/g, "_") || "appointments";
   download(new TextEncoder().encode(JSON.stringify(p, null, 2)),
     base + ".json", "application/json");
-  toast("Project file exported.", "success", 2200);
+  toast(t("web_toast_project_exported"), "success", 2200);
 }
 
 async function importJson(file) {
@@ -443,7 +517,7 @@ async function importJson(file) {
   try {
     const text = await file.text();
     const v = JSON.parse(state.bridge.validate(text));
-    if (!v.ok) { toast("Import failed: " + v.error); return; }
+    if (!v.ok) { toast(t("web_toast_import_failed", { err: v.error })); return; }
     state.project = v.project;
     state.project.patients.forEach((p) => {
       if (p.name) registerName(p.name);
@@ -451,15 +525,15 @@ async function importJson(file) {
     fillHeaderForm();
     clearForm();
     persist();
-    toast("Project imported.", "success", 2200);
+    toast(t("web_toast_project_exported"), "success", 2200);
   } catch (e) {
-    toast("Import failed: " + e.message);
+    toast(t("web_toast_import_failed", { err: e.message }));
   }
 }
 
 function clearAll() {
   if (state.project.patients.length &&
-      !window.confirm("Clear header, pattern and all patients?")) return;
+      !window.confirm(t("web_confirm_clear"))) return;
   state.project = {
     title: "", month: "", year: String(new Date().getFullYear()),
     days_in_month: 30,
@@ -467,6 +541,14 @@ function clearAll() {
   };
   fillHeaderForm();
   clearForm();
+  persist();
+}
+
+function autoLDays() {
+  if (!state.bridge) return;
+  const r = JSON.parse(state.bridge.weekend(ui.month.value.trim(), ui.year.value.trim()));
+  if (!r.ok) { toast(r.error); return; }
+  ui.l.value = r.days.join(", ");
   persist();
 }
 
@@ -480,7 +562,7 @@ function validateField(input, label) {
 function setEnabled(on) {
   ["f-title", "f-month", "f-year", "f-days", "f-c", "f-l", "f-name", "f-x",
    "f-dec", "f-zile", "f-loc", "f-mark-name", "f-mark-date",
-   "btn-add", "btn-mark", "btn-xlsx", "btn-json-out",
+   "btn-add", "btn-mark", "btn-xlsx", "btn-json-out", "btn-l-auto",
    "btn-clear"].forEach((id) => { $(id).disabled = !on; });
 }
 
@@ -498,19 +580,21 @@ async function boot() {
   loadStorage();
   fillHeaderForm();
   renderTable();
-  setStatus("Loading Python runtime…", "loading");
+  setStatus(t("web_status_boot1"), "loading");
   try {
     await loadScript(PYODIDE_BASE + "pyodide.js");
-    setStatus("Starting Python…", "loading");
+    setStatus(t("web_status_boot2"), "loading");
     const pyodide = await loadPyodide({ indexURL: PYODIDE_BASE });
-    setStatus("Loading Excel engine (openpyxl)…", "loading");
+    setStatus(t("web_status_boot3"), "loading");
     await pyodide.loadPackage("micropip");
     await pyodide.runPythonAsync(
       'import micropip\nawait micropip.install("openpyxl")');
-    setStatus("Loading app logic…", "loading");
+    setStatus(t("web_status_boot4"), "loading");
     const backendCode = await (await fetch("backend.py")).text();
+    const langCode = await (await fetch("lang.py")).text();
     const workbookCode = await (await fetch("workbook.py")).text();
     const appointmentCode = await (await fetch("appointment.py")).text();
+    const weekendCode = await (await fetch("weekend.py")).text();
     const bridgeCode = await (await fetch("web_bridge.py")).text();
     pyodide.runPython(`
 import sys, types
@@ -522,20 +606,25 @@ def _load_module(name, code):
     sys.modules[name] = mod
     return mod
 
-def _init(backend_code, workbook_code, appointment_code, bridge_code):
+def _init(backend_code, lang_code, workbook_code, appointment_code,
+          weekend_code, bridge_code):
+    _load_module("lang", lang_code)
     _load_module("backend", backend_code)
     _load_module("workbook", workbook_code)
     _load_module("appointment", appointment_code)
+    _load_module("weekend", weekend_code)
     wb = _load_module("web_bridge", bridge_code)
     g = globals()
     for fn in ("parse_days_json", "filter_names_json",
                "validate_project_json", "export_xlsx_b64",
                "month_sheet_name_json", "existing_sheets_b64",
-               "export_workbook_b64", "add_appointment_b64"):
+               "export_workbook_b64", "add_appointment_b64",
+               "set_language_json", "strings_json", "weekend_days_json"):
         g[fn] = getattr(wb, fn)
 `);
     const init = pyodide.globals.get("_init");
-    init(backendCode, workbookCode, appointmentCode, bridgeCode);
+    init(backendCode, langCode, workbookCode, appointmentCode,
+         weekendCode, bridgeCode);
     init.destroy();
     state.bridge = {
       parse: pyodide.globals.get("parse_days_json"),
@@ -546,19 +635,30 @@ def _init(backend_code, workbook_code, appointment_code, bridge_code):
       sheets: pyodide.globals.get("existing_sheets_b64"),
       exportWb: pyodide.globals.get("export_workbook_b64"),
       addAppt: pyodide.globals.get("add_appointment_b64"),
+      setLang: pyodide.globals.get("set_language_json"),
+      strings: pyodide.globals.get("strings_json"),
+      weekend: pyodide.globals.get("weekend_days_json"),
     };
+    try {
+      JSON.parse(state.bridge.setLang(state.lang));
+      state.strings = JSON.parse(state.bridge.strings(state.lang));
+    } catch (e) { console.warn("i18n load failed", e); }
+    applyLang();
     state.ready = true;
     setEnabled(true);
-    setStatus(navigator.onLine ? "Ready" : "Ready — offline", "ready");
+    setStatus(t(navigator.onLine ? "web_status_ready" : "web_status_ready_offline"),
+              "ready");
   } catch (err) {
     console.error(err);
-    setStatus("Load failed: " + err.message + " — tap to retry", "error");
+    setStatus(t("web_status_load_failed", { err: err.message }), "error");
     ui.status.style.cursor = "pointer";
     ui.status.onclick = () => location.reload();
   }
 }
 
 function wireEvents() {
+  ui.langSelect.addEventListener("change", () => setLang(ui.langSelect.value));
+  ui.btnLAuto.addEventListener("click", autoLDays);
   ui.btnAdd.addEventListener("click", addPatient);
   ui.btnUpdate.addEventListener("click", updatePatient);
   ui.btnCancel.addEventListener("click", clearForm);
@@ -576,7 +676,7 @@ function wireEvents() {
   ui.jsonIn.addEventListener("change", () => {
     const f = ui.jsonIn.files[0];
     ui.jsonIn.value = "";
-    if (!state.ready) { toast("Still loading — try again in a moment."); return; }
+    if (!state.ready) { toast(t("web_toast_still_loading")); return; }
     importJson(f);
   });
   ui.xlsxIn.addEventListener("change", () => {
@@ -587,10 +687,10 @@ function wireEvents() {
 
   [ui.title, ui.month, ui.year, ui.days, ui.c, ui.l].forEach((el) =>
     el.addEventListener("input", scheduleSave));
-  ui.c.addEventListener("blur", () => validateField(ui.c, "C days"));
-  ui.l.addEventListener("blur", () => validateField(ui.l, "L days"));
+  ui.c.addEventListener("blur", () => validateField(ui.c, t("web_label_c_field")));
+  ui.l.addEventListener("blur", () => validateField(ui.l, t("web_label_l_field")));
   ui.days.addEventListener("blur", () => {
-    if (daysValue() === null) toast("Days must be a whole number between 1 and 31.");
+    if (daysValue() === null) toast(t("err_days_whole"));
     else persist();
   });
 
@@ -625,10 +725,10 @@ function wireEvents() {
     }));
 
   window.addEventListener("online", () => {
-    if (state.ready) setStatus("Ready", "ready");
+    if (state.ready) setStatus(t("web_status_ready"), "ready");
   });
   window.addEventListener("offline", () => {
-    if (state.ready) setStatus("Ready — offline", "ready");
+    if (state.ready) setStatus(t("web_status_ready_offline"), "ready");
   });
 
   if ("serviceWorker" in navigator) {
@@ -639,4 +739,5 @@ function wireEvents() {
 
 wireEvents();
 setEnabled(false);
+ui.langSelect.value = state.lang;
 boot();

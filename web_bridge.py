@@ -11,6 +11,8 @@ from openpyxl import load_workbook
 
 import appointment
 import backend
+import lang
+import weekend
 import workbook
 
 MIME = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
@@ -136,3 +138,20 @@ def add_appointment_b64(workbook_b64, name, day, month, year):
         "sheet": sheet,
         "result": result,
     })
+
+
+def set_language_json(code):
+    lang.set_language(code)
+    return json.dumps({"ok": True, "lang": lang.get_language()})
+
+
+def strings_json(code=None):
+    return lang.strings_json(code)
+
+
+def weekend_days_json(month, year=None):
+    try:
+        return json.dumps({"ok": True,
+                           "days": weekend.weekend_days(month, year)})
+    except ValueError as exc:
+        return json.dumps({"ok": False, "error": str(exc)})

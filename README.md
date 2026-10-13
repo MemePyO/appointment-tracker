@@ -24,6 +24,8 @@ A phone-friendly web app (PWA) for tracking patient appointments, built on the *
 - **Multi-sheet workbook** — sheets named `MM.YYYY` (needs the Year field, default = current year); "Update existing" asks before replacing a same-named sheet, "Create new" starts fresh
 - **Introdu ședință** — mark one appointment by date (e.g. STOICA FLORIN, 30.04.2026): `X` on that day in the matching sheet, patient/sheet auto-created, nothing changes if already marked; the updated workbook is downloaded
 - **Load workbook (.xlsx)** — pull a workbook from your device into the browser so "Update existing" and Introdu ședință can edit it
+- **Auto L days** — the **auto** button fills the L days field with every Saturday and Sunday of the chosen month + year
+- **Language selector** — switch the interface between English and Română (remembered in your browser); month names and exported Excel stay Romanian
 - **Export real `.xlsx`** — title row, per-day columns, `COUNTIF` formulas, `TOTAL` row, color-coded cells (identical layout to the desktop app)
 - **Export / import project `.json`** — move work between phone and PC, or between devices
 - **Autosave** — everything is stored in your browser (`localStorage`) and survives reloads / offline
@@ -54,6 +56,8 @@ Use **Export project (.json)** on the phone and open the file with the
 | `backend.py` | Pure-Python core (parsing, validation, Excel export) — shared with the desktop app |
 | `workbook.py` | Multi-sheet `MM.YYYY` export — shared with the desktop app |
 | `appointment.py` | Introdu ședință logic (mark X by date) — shared with the desktop app |
+| `weekend.py` | Auto-fill L days (Sat + Sun) — shared with the desktop app |
+| `lang.py` | EN/RO string table — shared with the desktop app |
 | `web_bridge.py` | Thin JSON ↔ Python bridge for the browser |
 | `app.js` / `index.html` / `style.css` | UI, autocomplete, autosave, export modal |
 | `sw.js` / `manifest.webmanifest` | Offline support + installable app |
