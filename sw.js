@@ -1,6 +1,6 @@
 "use strict";
 
-const CACHE = "appointment-tracker-v2";
+const CACHE = "appointment-tracker-v3";
 const CORE = [
   "./",
   "index.html",
