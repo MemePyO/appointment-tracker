@@ -32,6 +32,9 @@
         <label>Month
           <input id="f-month" type="text" placeholder="APRILIE" disabled>
         </label>
+        <label class="narrow">Year
+          <input id="f-year" type="text" inputmode="numeric" disabled>
+        </label>
         <label class="narrow">Days
           <input id="f-days" type="text" inputmode="numeric" value="30" disabled>
         </label>
@@ -57,7 +60,7 @@
         </label>
         <div id="ac-list" class="ac-list" hidden></div>
       </div>
-      <label>X days
+      <label>Zile sedinte
         <input id="f-x" type="text" placeholder="e.g. 1, 3, 5-7" disabled>
       </label>
       <div class="row row3">
@@ -85,7 +88,7 @@
         <table id="table">
           <thead>
             <tr>
-              <th>NR.</th><th>PACIENT</th><th>X DAYS</th><th>COUNT</th>
+              <th>NR.</th><th>PACIENT</th><th>ZILE SEDINTE</th><th>COUNT</th>
               <th>DATA DECIZIE</th><th>NR ZILE</th><th>LOCALITATE</th>
             </tr>
           </thead>
@@ -95,11 +98,29 @@
       <p id="empty" class="empty">No patients yet. Add one above.</p>
     </section>
 
+    <section class="card">
+      <h2 id="mark-title">Introdu ședință <small>mark an X by date in the workbook</small></h2>
+      <div class="ac-wrap">
+        <label>Patient name
+          <input id="f-mark-name" type="text" placeholder="STOICA FLORIN" autocomplete="off" disabled>
+        </label>
+      </div>
+      <label>Date
+        <input id="f-mark-date" type="text" placeholder="30.04.2026" disabled>
+      </label>
+      <div class="btn-row">
+        <button id="btn-mark" class="btn success" disabled>Mark appointment</button>
+      </div>
+      <p id="mark-status" class="hint"></p>
+    </section>
+
     <section class="card actions">
       <button id="btn-xlsx" class="btn success big" disabled>⬇ Export Excel (.xlsx)</button>
       <button id="btn-json-out" class="btn" disabled>Export project (.json)</button>
       <label class="btn file" for="f-json-in">Import project (.json)</label>
       <input id="f-json-in" type="file" accept=".json,application/json" hidden>
+      <label class="btn file" for="f-xlsx-in">Load workbook (.xlsx)</label>
+      <input id="f-xlsx-in" type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" hidden>
       <button id="btn-clear" class="btn danger ghost" disabled>Clear all</button>
     </section>
   </main>
@@ -108,6 +129,19 @@
     Python runs locally in your browser — your data never leaves this device.
     Works offline after the first load.
   </footer>
+
+  <div id="export-modal" class="modal-backdrop" hidden>
+    <div class="modal card">
+      <h2>Export to Excel</h2>
+      <p class="hint">Update the workbook saved in this browser, or create a
+        brand-new one. The file is always downloaded to your device.</p>
+      <div class="modal-btns">
+        <button id="btn-ex-update" class="btn primary">Update existing workbook…</button>
+        <button id="btn-ex-new" class="btn success">Create new workbook…</button>
+        <button id="btn-ex-cancel" class="btn ghost">Cancel</button>
+      </div>
+    </div>
+  </div>
 
   <div id="toast" class="toast" hidden></div>
   <script src="app.js"></script>

@@ -1,6 +1,6 @@
 "use strict";
 
-const CACHE = "appointment-tracker-v1";
+const CACHE = "appointment-tracker-v2";
 const CORE = [
   "./",
   "index.html",
@@ -8,6 +8,8 @@ const CORE = [
   "app.js",
   "manifest.webmanifest",
   "backend.py",
+  "workbook.py",
+  "appointment.py",
   "web_bridge.py",
   "icons/icon-192.png",
   "icons/icon-512.png",

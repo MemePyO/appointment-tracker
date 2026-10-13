@@ -3,14 +3,17 @@
 const PYODIDE_BASE = "https://cdn.jsdelivr.net/pyodide/v314.0.7/full/";
 const KEY_PROJECT = "appointment_project";
 const KEY_NAMES = "appointment_names";
+const KEY_WORKBOOK = "appointment_workbook";
 
 const $ = (id) => document.getElementById(id);
 
 const ui = {
-  title: $("f-title"), month: $("f-month"), days: $("f-days"),
+  title: $("f-title"), month: $("f-month"), year: $("f-year"), days: $("f-days"),
   c: $("f-c"), l: $("f-l"),
   name: $("f-name"), x: $("f-x"), dec: $("f-dec"),
   zile: $("f-zile"), loc: $("f-loc"),
+  markName: $("f-mark-name"), markDate: $("f-mark-date"),
+  btnMark: $("btn-mark"), markStatus: $("mark-status"),
   acList: $("ac-list"),
   formTitle: $("form-title"),
   btnAdd: $("btn-add"), btnUpdate: $("btn-update"),
@@ -18,7 +21,10 @@ const ui = {
   tableBody: document.querySelector("#table tbody"),
   empty: $("empty"), badge: $("badge"),
   btnXlsx: $("btn-xlsx"), btnJsonOut: $("btn-json-out"),
-  jsonIn: $("f-json-in"), btnClear: $("btn-clear"),
+  jsonIn: $("f-json-in"), xlsxIn: $("f-xlsx-in"), btnClear: $("btn-clear"),
+  exportModal: $("export-modal"),
+  btnExUpdate: $("btn-ex-update"), btnExNew: $("btn-ex-new"),
+  btnExCancel: $("btn-ex-cancel"),
   status: $("status"), pill: $("pill"), toast: $("toast"),
 };
 
@@ -27,8 +33,10 @@ const state = {
   editIndex: null,
   knownNames: [],
   bridge: null,
+  workbookB64: "",
   project: {
-    title: "", month: "", days_in_month: 30,
+    title: "", month: "", year: String(new Date().getFullYear()),
+    days_in_month: 30,
     c_days: [], l_days: [], patients: [],
   },
 };
@@ -73,11 +81,17 @@ function loadStorage() {
     state.project = {
       title: typeof p.title === "string" ? p.title : "",
       month: typeof p.month === "string" ? p.month : "",
+      year: (typeof p.year === "string" && p.year.trim()) ||
+            (Number.isInteger(p.year) ? String(p.year) : "") ||
+            String(new Date().getFullYear()),
       days_in_month: Number.isInteger(p.days_in_month) ? p.days_in_month : 30,
       c_days: Array.isArray(p.c_days) ? p.c_days : [],
       l_days: Array.isArray(p.l_days) ? p.l_days : [],
       patients: Array.isArray(p.patients) ? p.patients : [],
     };
+  } catch (e) { /* fresh start */ }
+  try {
+    state.workbookB64 = localStorage.getItem(KEY_WORKBOOK) || "";
   } catch (e) { /* fresh start */ }
 }
 
@@ -93,6 +107,7 @@ function collectRaw() {
   return {
     title: ui.title.value.trim(),
     month: ui.month.value.trim(),
+    year: ui.year.value.trim(),
     days_in_month: n,
     c_days: parseDaysSafe(ui.c.value, state.project.c_days),
     l_days: parseDaysSafe(ui.l.value, state.project.l_days),
@@ -119,6 +134,7 @@ function saveNames() {
 function fillHeaderForm() {
   ui.title.value = state.project.title;
   ui.month.value = state.project.month;
+  ui.year.value = state.project.year || String(new Date().getFullYear());
   ui.days.value = String(state.project.days_in_month);
   ui.c.value = state.project.c_days.join(", ");
   ui.l.value = state.project.l_days.join(", ");
@@ -305,15 +321,111 @@ function b64ToBytes(b64) {
   return arr;
 }
 
-function exportXlsx() {
+function saveWorkbook(b64) {
+  state.workbookB64 = b64 || "";
+  try {
+    if (state.workbookB64) localStorage.setItem(KEY_WORKBOOK, state.workbookB64);
+    else localStorage.removeItem(KEY_WORKBOOK);
+  } catch (e) { /* full */ }
+}
+
+function openExportModal() {
+  if (!state.ready) return;
+  ui.exportModal.hidden = false;
+}
+
+function closeExportModal() {
+  ui.exportModal.hidden = true;
+}
+
+function doExportWorkbook(workbookB64) {
   const raw = collectRaw();
   if (!raw) { toast("Days must be a whole number between 1 and 31."); return; }
   const v = JSON.parse(state.bridge.validate(JSON.stringify(raw)));
   if (!v.ok) { toast(v.error); return; }
-  const r = JSON.parse(state.bridge.export(JSON.stringify(v.project)));
+  let b64 = workbookB64 || "";
+  if (b64) {
+    const sh = JSON.parse(state.bridge.sheetName(
+      v.project.month, v.project.year || ""));
+    if (!sh.ok) { toast(sh.error); return; }
+    const sheets = JSON.parse(state.bridge.sheets(b64));
+    if (sheets.ok && sheets.sheets.indexOf(sh.sheet) !== -1 &&
+        !window.confirm("Sheet " + sh.sheet + " already exists in the " +
+                        "stored workbook.\n\nReplace it with the new data?")) {
+      closeExportModal();
+      return;
+    }
+  }
+  const r = JSON.parse(state.bridge.exportWb(JSON.stringify(v.project), b64));
   if (!r.ok) { toast(r.error); return; }
+  saveWorkbook(r.b64);
   download(b64ToBytes(r.b64), r.filename, r.mime);
-  toast("Excel file exported.", "success", 2200);
+  closeExportModal();
+  toast("Exported sheet " + r.sheet + " — file downloaded.", "success", 2600);
+}
+
+function exportXlsx() {
+  openExportModal();
+}
+
+function exportUpdate() {
+  if (!state.workbookB64) {
+    closeExportModal();
+    toast("No workbook saved in this browser yet — use " +
+          "“Create new workbook” or “Load workbook (.xlsx)” first.");
+    return;
+  }
+  doExportWorkbook(state.workbookB64);
+}
+
+function exportNew() {
+  doExportWorkbook("");
+}
+
+async function loadWorkbookFile(file) {
+  if (!file) return;
+  if (!state.ready) { toast("Still loading — try again in a moment."); return; }
+  try {
+    const buf = new Uint8Array(await file.arrayBuffer());
+    let bin = "";
+    for (let i = 0; i < buf.length; i++) bin += String.fromCharCode(buf[i]);
+    const b64 = btoa(bin);
+    const sheets = JSON.parse(state.bridge.sheets(b64));
+    if (!sheets.ok) { toast("Cannot read workbook: " + sheets.error); return; }
+    saveWorkbook(b64);
+    toast("Workbook loaded (" + sheets.sheets.length + " sheet" +
+          (sheets.sheets.length === 1 ? "" : "s") + ").", "success", 2400);
+  } catch (e) {
+    toast("Load failed: " + e.message);
+  }
+}
+
+function markAppointment() {
+  if (!state.ready) return;
+  const name = ui.markName.value.trim();
+  if (!name) { toast("Patient name is required."); ui.markName.focus(); return; }
+  const dateText = ui.markDate.value.trim();
+  if (!dateText) { toast("Date is required, e.g. 30.04.2026."); ui.markDate.focus(); return; }
+  const parts = dateText.split(/[./\-\s]+/).filter(Boolean);
+  if (parts.length !== 3) { toast("Date must look like 30.04.2026"); ui.markDate.focus(); return; }
+  const [day, month, year] = parts;
+  if (!state.workbookB64) {
+    toast("No workbook in this browser yet — export a new one first " +
+          "(or use “Load workbook (.xlsx)”).");
+    return;
+  }
+  const r = JSON.parse(state.bridge.addAppt(state.workbookB64, name, day, month, year));
+  if (!r.ok) { ui.markStatus.textContent = r.error; toast(r.error); return; }
+  saveWorkbook(r.b64);
+  download(b64ToBytes(r.b64), "appointments.xlsx", r.mime ||
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+  registerName(name);
+  let msg;
+  if (r.result === "already_marked") msg = "Already marked: " + name + " on " + r.sheet;
+  else if (r.result === "added") msg = "Added " + name + " + X on " + r.sheet;
+  else msg = "Marked X for " + name + " on " + r.sheet;
+  ui.markStatus.textContent = msg + " — file downloaded.";
+  toast(msg, "success", 2400);
 }
 
 function exportJson() {
@@ -349,7 +461,8 @@ function clearAll() {
   if (state.project.patients.length &&
       !window.confirm("Clear header, pattern and all patients?")) return;
   state.project = {
-    title: "", month: "", days_in_month: 30,
+    title: "", month: "", year: String(new Date().getFullYear()),
+    days_in_month: 30,
     c_days: [], l_days: [], patients: [],
   };
   fillHeaderForm();
@@ -365,8 +478,9 @@ function validateField(input, label) {
 }
 
 function setEnabled(on) {
-  ["f-title", "f-month", "f-days", "f-c", "f-l", "f-name", "f-x",
-   "f-dec", "f-zile", "f-loc", "btn-add", "btn-xlsx", "btn-json-out",
+  ["f-title", "f-month", "f-year", "f-days", "f-c", "f-l", "f-name", "f-x",
+   "f-dec", "f-zile", "f-loc", "f-mark-name", "f-mark-date",
+   "btn-add", "btn-mark", "btn-xlsx", "btn-json-out",
    "btn-clear"].forEach((id) => { $(id).disabled = !on; });
 }
 
@@ -395,6 +509,8 @@ async function boot() {
       'import micropip\nawait micropip.install("openpyxl")');
     setStatus("Loading app logic…", "loading");
     const backendCode = await (await fetch("backend.py")).text();
+    const workbookCode = await (await fetch("workbook.py")).text();
+    const appointmentCode = await (await fetch("appointment.py")).text();
     const bridgeCode = await (await fetch("web_bridge.py")).text();
     pyodide.runPython(`
 import sys, types
@@ -406,22 +522,30 @@ def _load_module(name, code):
     sys.modules[name] = mod
     return mod
 
-def _init(backend_code, bridge_code):
+def _init(backend_code, workbook_code, appointment_code, bridge_code):
     _load_module("backend", backend_code)
+    _load_module("workbook", workbook_code)
+    _load_module("appointment", appointment_code)
     wb = _load_module("web_bridge", bridge_code)
     g = globals()
     for fn in ("parse_days_json", "filter_names_json",
-               "validate_project_json", "export_xlsx_b64"):
+               "validate_project_json", "export_xlsx_b64",
+               "month_sheet_name_json", "existing_sheets_b64",
+               "export_workbook_b64", "add_appointment_b64"):
         g[fn] = getattr(wb, fn)
 `);
     const init = pyodide.globals.get("_init");
-    init(backendCode, bridgeCode);
+    init(backendCode, workbookCode, appointmentCode, bridgeCode);
     init.destroy();
     state.bridge = {
       parse: pyodide.globals.get("parse_days_json"),
       filter: pyodide.globals.get("filter_names_json"),
       validate: pyodide.globals.get("validate_project_json"),
       export: pyodide.globals.get("export_xlsx_b64"),
+      sheetName: pyodide.globals.get("month_sheet_name_json"),
+      sheets: pyodide.globals.get("existing_sheets_b64"),
+      exportWb: pyodide.globals.get("export_workbook_b64"),
+      addAppt: pyodide.globals.get("add_appointment_b64"),
     };
     state.ready = true;
     setEnabled(true);
@@ -440,6 +564,13 @@ function wireEvents() {
   ui.btnCancel.addEventListener("click", clearForm);
   ui.btnRemove.addEventListener("click", removePatient);
   ui.btnXlsx.addEventListener("click", exportXlsx);
+  ui.btnExUpdate.addEventListener("click", exportUpdate);
+  ui.btnExNew.addEventListener("click", exportNew);
+  ui.btnExCancel.addEventListener("click", closeExportModal);
+  ui.exportModal.addEventListener("click", (e) => {
+    if (e.target === ui.exportModal) closeExportModal();
+  });
+  ui.btnMark.addEventListener("click", markAppointment);
   ui.btnJsonOut.addEventListener("click", exportJson);
   ui.btnClear.addEventListener("click", clearAll);
   ui.jsonIn.addEventListener("change", () => {
@@ -448,8 +579,13 @@ function wireEvents() {
     if (!state.ready) { toast("Still loading — try again in a moment."); return; }
     importJson(f);
   });
+  ui.xlsxIn.addEventListener("change", () => {
+    const f = ui.xlsxIn.files[0];
+    ui.xlsxIn.value = "";
+    if (f) loadWorkbookFile(f);
+  });
 
-  [ui.title, ui.month, ui.days, ui.c, ui.l].forEach((el) =>
+  [ui.title, ui.month, ui.year, ui.days, ui.c, ui.l].forEach((el) =>
     el.addEventListener("input", scheduleSave));
   ui.c.addEventListener("blur", () => validateField(ui.c, "C days"));
   ui.l.addEventListener("blur", () => validateField(ui.l, "L days"));
@@ -479,6 +615,13 @@ function wireEvents() {
       if (e.key !== "Enter") return;
       e.preventDefault();
       if (state.editIndex === null) addPatient(); else updatePatient();
+    }));
+
+  [ui.markName, ui.markDate].forEach((el) =>
+    el.addEventListener("keydown", (e) => {
+      if (e.key !== "Enter") return;
+      e.preventDefault();
+      markAppointment();
     }));
 
   window.addEventListener("online", () => {

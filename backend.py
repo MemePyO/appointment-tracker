@@ -3,6 +3,7 @@
 import json
 import os
 import re
+from datetime import date
 
 from openpyxl import Workbook
 from openpyxl.styles import Alignment, Border, Font, PatternFill, Side
@@ -113,6 +114,7 @@ def new_project():
     return {
         "title": "",
         "month": "",
+        "year": date.today().year,
         "days_in_month": 30,
         "c_days": [],
         "l_days": [],
@@ -137,6 +139,16 @@ def validate_project(project):
     n = project["days_in_month"]
     if not isinstance(n, int) or not 1 <= n <= 31:
         raise ValueError("Days must be a whole number between 1 and 31.")
+    year = project.get("year")
+    if year is None or (isinstance(year, str) and not year.strip()):
+        year = date.today().year
+    else:
+        try:
+            year = int(str(year).strip())
+        except ValueError:
+            raise ValueError("Year must be a whole number like 2026.")
+        if not 2000 <= year <= 2100:
+            raise ValueError("Year must be between 2000 and 2100.")
     if not isinstance(project["c_days"], list) or not isinstance(project["l_days"], list):
         raise ValueError("C days and L days must be lists.")
     if not isinstance(project["patients"], list):
@@ -156,6 +168,7 @@ def validate_project(project):
     return {
         "title": str(project["title"]),
         "month": str(project["month"]),
+        "year": year,
         "days_in_month": n,
         "c_days": parse_days(_days_list_to_text(project["c_days"]), n),
         "l_days": parse_days(_days_list_to_text(project["l_days"]), n),
@@ -186,12 +199,21 @@ def _number(value):
 
 def export_excel(project, path):
     project = validate_project(project)
+    if not project["patients"]:
+        raise ValueError("Add at least one patient before exporting.")
+    wb = Workbook()
+    ws = wb.active
+    ws.title = "TABEL"
+    _write_table(ws, project)
+    wb.save(path)
+    return path
+
+
+def _write_table(ws, project):
     n = project["days_in_month"]
     c_set = set(project["c_days"])
     l_set = set(project["l_days"])
     patients = project["patients"]
-    if not patients:
-        raise ValueError("Add at least one patient before exporting.")
 
     first_day = 3
     last_day = 2 + n
@@ -199,10 +221,6 @@ def export_excel(project, path):
     dec_col = count_col + 1
     zile_col = dec_col + 1
     loc_col = zile_col + 1
-
-    wb = Workbook()
-    ws = wb.active
-    ws.title = "TABEL"
 
     thin = Side(style="thin", color="000000")
     box = Border(left=thin, right=thin, top=thin, bottom=thin)
@@ -344,6 +362,3 @@ def export_excel(project, path):
     ws.column_dimensions[get_column_letter(dec_col)].width = 13
     ws.column_dimensions[get_column_letter(zile_col)].width = 9
     ws.column_dimensions[get_column_letter(loc_col)].width = 20
-
-    wb.save(path)
-    return path
